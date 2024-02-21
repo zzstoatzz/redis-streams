@@ -61,33 +61,38 @@ def main_loop(client_name):
             )
             if pending_messages:
                 message_ids = [msg["message_id"] for msg in pending_messages]
-                claimed_messages = r.xclaim(
-                    stream_name, "my_consumer_group", client_name, 0, message_ids
-                )
-                for msg_id, msg_data in claimed_messages:
-                    data_str = msg_data[b"data"].decode("utf-8")
-                    data_obj = json.loads(data_str)
-                    print(
-                        f"Claimed and sending to client from {stream_name}: {data_obj}"
+                if message_ids:
+                    claimed_messages = r.xclaim(
+                        stream_name, "my_consumer_group", client_name, 0, message_ids
                     )
-                    r.xack(stream_name, "my_consumer_group", msg_id)
+                    # Process claimed messages
+                    for msg_id, msg_data in claimed_messages:
+                        data_str = msg_data[b"data"].decode("utf-8")
+                        data_obj = json.loads(data_str)
+                        print(f"Claimed and sending to client from {stream_name}: {data_obj}")
+                    # Acknowledge all claimed messages at once
+                    r.xack(stream_name, "my_consumer_group", *message_ids)
 
             # Reading new messages from the stream using xreadgroup
             messages = r.xreadgroup(
                 "my_consumer_group",
                 client_name,
                 {stream_name: ">"},
-                count=5, # TODO: how to choose the count?
-                block=1000, # TODO: how to choose the block time?
+                count=5,
+                block=1000,
             )
-            for _, msgs in messages:
-                for msg_id, msg_data in msgs:
-                    data_str = msg_data[b"data"].decode("utf-8")
-                    data_obj = json.loads(data_str)
-                    print(f"Sending to client from {stream_name}: {data_obj}")
-                    r.xack(stream_name, "my_consumer_group", msg_id)
+            new_msg_ids = [msg_id for _, msgs in messages for msg_id, _ in msgs]
+            if new_msg_ids:
+                # Process new messages
+                for _, msgs in messages:
+                    for msg_id, msg_data in msgs:
+                        data_str = msg_data[b"data"].decode("utf-8")
+                        data_obj = json.loads(data_str)
+                        print(f"Sending to client from {stream_name}: {data_obj}")
+                r.xack(stream_name, "my_consumer_group", *new_msg_ids)
 
         time.sleep(0.1)
+
 
 
 def start_simulation():
