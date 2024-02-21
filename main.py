@@ -93,14 +93,23 @@ def main_loop(client_name):
                 count=5,
                 block=1000,
             )
-            new_msg_ids = [msg_id for _, msgs in messages for msg_id, _ in msgs]
+            
+            # Process new messages and randomly acknowledge most of them
+            new_msg_ids = []
+            for _, msgs in messages:
+                for msg_id, msg_data in msgs:
+                    data_str = msg_data[b"data"].decode("utf-8")
+                    data_obj = json.loads(data_str)
+                    print(
+                        f"Processing (and maybe ack) from {stream_name}: {data_obj}"
+                    )
+                    
+                    if random.random() < 0.8: # ack 80% of the time
+                        new_msg_ids.append(msg_id)
+                    else:
+                        print(f"Ope! Not acking {msg_id}")
+            
             if new_msg_ids:
-                # Process new messages
-                for _, msgs in messages:
-                    for _, msg_data in msgs:
-                        data_str = msg_data[b"data"].decode("utf-8")
-                        data_obj = json.loads(data_str)
-                        print(f"Sending to client from {stream_name}: {data_obj}")
                 r.xack(stream_name, "my_consumer_group", *new_msg_ids)
 
         time.sleep(0.1)
