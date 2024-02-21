@@ -10,7 +10,8 @@ r = redis.Redis(host="localhost", port=6379, db=0)
 
 def ensure_consumer_group_exists(stream_name, groupname):
     try:
-        r.xgroup_create(name=stream_name, groupname=groupname, id="$", mkstream=True)
+        # implcitly uses id="$"
+        r.xgroup_create(name=stream_name, groupname=groupname, mkstream=True)
     except redis.exceptions.ResponseError as e:
         if "BUSYGROUP Consumer Group name already exists" not in str(e):
             raise
@@ -31,8 +32,9 @@ def event_submission_thread():
     """
     task_keys = ["task1", "task2"]  # Example task keys
     while True:
-        # Wait for a random time before the next burst
-        time.sleep(random.randint(1, 5))
+        sleep_time = random.randint(1, 5)
+        print(f"SUBMISSION THREAD: Sleeping for {sleep_time} seconds...")
+        time.sleep(sleep_time)
 
         # Submit a burst of events
         burst_size = random.randint(1, 5)
