@@ -55,45 +55,61 @@ def main_loop(client_name):
                 stream_name=stream_name, groupname="my_consumer_group"
             )
 
-            # Handling pending messages first
-            pending_messages = r.xpending_range(
-                stream_name, "my_consumer_group", "-", "+", 10
-            )
-            if pending_messages:
-                message_ids = [msg["message_id"] for msg in pending_messages]
+            # Use XAUTOCLAIM to handle pending messages
+            start_id = '0-0'  # Initial start ID for XAUTOCLAIM
+            while True:
+                result = r.xautoclaim(
+                    name=stream_name,
+                    groupname="my_consumer_group",
+                    consumername=client_name,
+                    min_idle_time=10000,  # TODO: how to choose this number?
+                    start_id=start_id,
+                    count=100  # TODO: how to choose this number?
+                )
+                next_start_id = result[0]
+                claimed_messages = result[1]
+                if not claimed_messages:
+                    break  # Break the loop if no more messages to claim
+                
+                # Process and acknowledge claimed messages
+                for _, msg_data in claimed_messages:
+                    # Process message
+                    data_str = msg_data[b"data"].decode("utf-8")
+                    data_obj = json.loads(data_str)
+                    print(f"Claimed: sending to client from {stream_name}: {data_obj}")
+                # Acknowledge all claimed messages at once
+                message_ids = [msg_id for msg_id, _ in claimed_messages]
                 if message_ids:
-                    claimed_messages = r.xclaim(
-                        name=stream_name,
-                        groupname="my_consumer_group",
-                        consumername=client_name,
-                        min_idle_time=0,
-                        message_ids=message_ids,
-                    )
-                    # Process claimed messages
-                    for _, msg_data in claimed_messages:
-                        data_str = msg_data[b"data"].decode("utf-8")
-                        data_obj = json.loads(data_str)
-                        print(
-                            f"Claimed: sending to client from {stream_name}: {data_obj}"
-                        )
-                    # Acknowledge all claimed messages at once
                     r.xack(stream_name, "my_consumer_group", *message_ids)
+
+                # Prepare for the next iteration if needed
+                start_id = next_start_id
 
             # Reading new messages from the stream using xreadgroup
             messages = r.xreadgroup(
-                "my_consumer_group",
-                client_name,
-                {stream_name: ">"},
+                groupname="my_consumer_group",
+                consumername=client_name,
+                streams={stream_name: ">"},
                 count=5,
                 block=1000,
             )
-            if new_msg_ids := [msg_id for _, msgs in messages for msg_id, _ in msgs]:
-                # Process new messages
-                for _, msgs in messages:
-                    for msg_id, msg_data in msgs:
-                        data_str = msg_data[b"data"].decode("utf-8")
-                        data_obj = json.loads(data_str)
-                        print(f"Sending to client from {stream_name}: {data_obj}")
+            
+            # Process new messages and randomly acknowledge most of them
+            new_msg_ids = []
+            for _, msgs in messages:
+                for msg_id, msg_data in msgs:
+                    data_str = msg_data[b"data"].decode("utf-8")
+                    data_obj = json.loads(data_str)
+                    print(
+                        f"Processing (and maybe ack) from {stream_name}: {data_obj}"
+                    )
+                    
+                    if random.random() < 0.8: # ack 80% of the time
+                        new_msg_ids.append(msg_id)
+                    else:
+                        print(f"Ope! Not acking {msg_id}")
+            
+            if new_msg_ids:
                 r.xack(stream_name, "my_consumer_group", *new_msg_ids)
 
         time.sleep(0.1)
