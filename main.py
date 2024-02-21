@@ -6,7 +6,7 @@ from datetime import datetime
 import redis
 
 r = redis.Redis(host="localhost", port=6379, db=0)
-
+# docker run -p 6379:6379 -d redis:latest
 
 def ensure_consumer_group_exists(stream_name, groupname):
     try:
