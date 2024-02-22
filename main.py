@@ -88,7 +88,7 @@ def process_new_messages(stream_name: str, consumer_name: str):
             data_obj = json.loads(data_str)
 
             if random.random() < 0.8:  # Ack 80% of the time
-                pprint(f"Processing + ack for {stream_name}:{i}: {data_obj.get('detail')}")
+                pprint(f"Processing + ack for {stream_name}:{i}: {data_obj.get('detail')}") # noqa
                 new_msg_ids.append(i)
             else:
                 pprint(f"Ope! Not acking {stream_name}:{i}: {data_obj.get('detail')}")
@@ -132,20 +132,23 @@ def main_loop(client_name):
             time.sleep(0.1)
 
 
-def start_simulation():
-    threading.Thread(target=partial(process_messages, logs), daemon=True).start()
+def start_simulation(client_name: str):
+    threading.Thread(
+        target=partial(process_messages, logs, client_name),
+        daemon=True
+    ).start()
     threading.Thread(
         target=event_submission_thread,
         daemon=True,
-        name=SAMPLE_CLIENT_NAME
+        name=client_name
     ).start()
 
-    main_loop(SAMPLE_CLIENT_NAME)
+    main_loop(client_name)
 
 
 if __name__ == "__main__":
     try:
-        start_simulation()
+        start_simulation(SAMPLE_CLIENT_NAME)
     except KeyboardInterrupt:
         print("\n\nExiting...")
         exit(0)

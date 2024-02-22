@@ -7,7 +7,6 @@ console = Console()
 layout = Layout()
 
 N_MESSAGES = 50
-client_name = "foo-client"
 
 layout.split_row(
     Layout(name="main_thread"),
@@ -18,7 +17,7 @@ layout["submission_thread"].update(Panel("", title="Submission Thread Log"))
 
 queue = Queue()
 
-def process_messages(logs):
+def process_messages(logs, client_name):
     while True:
         thread_name, message = queue.get()
         
