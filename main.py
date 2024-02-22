@@ -6,18 +6,18 @@ from datetime import datetime
 from functools import partial
 import redis
 
-from viz import process_messages, update_visuals
+from viz import render_messages, update_visuals
 
 # docker run -p 6379:6379 -d redis:latest
 r = redis.Redis(host="localhost", port=6379, db=0)
 
 
 SAMPLE_CLIENT_NAME = "foo-client"
-MIN_IDLE_TIME = 10_000  # 10 seconds
+MIN_IDLE_TIME = 1_000  # 1 second
 AUTOCLAIM_COUNT = 100
-READ_COUNT = 5
-READ_BLOCK = 1000  # 1 second
-
+READ_COUNT = 10
+READ_BLOCK = 1_000  # 1 second
+ACK_FAILURE_RATE = 0.05
 
 def pprint(msg: str):
     update_visuals(thread_name=threading.current_thread().name, message=msg)
@@ -35,12 +35,10 @@ def event_submission_thread():
     task_keys = ["task1", "task2"]
 
     while True:
-        sleep_time = random.randint(1, 5)
-        pprint(f"SUBMISSION THREAD: Sleeping for {sleep_time} seconds...")
-        time.sleep(sleep_time)
+        time.sleep(random.randint(1, 5))
 
         # Submit a burst of events
-        for _ in range(random.randint(1, 5)):
+        for _ in range(random.randint(1, READ_COUNT)):
             task_key = random.choice(task_keys)
             event_data = {
                 "timestamp": str(datetime.now()),
@@ -82,7 +80,7 @@ def process_new_messages(stream_name: str, consumer_name: str, group_name: str):
             i = msg_id.decode("utf-8")
             data_obj = json.loads(msg_data[b"data"].decode("utf-8"))
 
-            if random.random() < 0.8:  # Ack 80% of the time
+            if random.random() > ACK_FAILURE_RATE:
                 pprint(f"Processing + will ack {stream_name}:{i}: {data_obj.get('detail')}")  # noqa
                 new_msg_ids.append(i)
             else:
@@ -129,7 +127,7 @@ def main_loop(client_name):
 
 
 def start_simulation(client_name: str):
-    threading.Thread(target=partial(process_messages, client_name), daemon=True).start()
+    threading.Thread(target=partial(render_messages, client_name), daemon=True).start()
     threading.Thread(target=event_submission_thread, daemon=True, name=client_name).start() # noqa
 
     main_loop(client_name)
