@@ -18,9 +18,7 @@ layout["submission_thread"].update(Panel("", title="Submission Thread Log"))
 
 queue = Queue()
 
-logs = {"MainThread": [], client_name: []}
-
-def process_messages():
+def process_messages(logs):
     while True:
         thread_name, message = queue.get()
         

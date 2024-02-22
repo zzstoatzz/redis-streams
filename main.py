@@ -3,6 +3,7 @@ import random
 import time
 import threading
 from datetime import datetime
+from functools import partial
 import redis
 
 from viz import process_messages, update_visuals
@@ -10,8 +11,12 @@ from viz import process_messages, update_visuals
 # docker run -p 6379:6379 -d redis:latest
 r = redis.Redis(host="localhost", port=6379, db=0)
 
+
+SAMPLE_CLIENT_NAME = "foo-client"
 AUTOCLAIM_COUNT = 100
 MIN_IDLE_TIME = 10_000
+
+logs = {"MainThread": [], SAMPLE_CLIENT_NAME: []}
 
 def pprint(msg: str):
     update_visuals(
@@ -122,7 +127,7 @@ def main_loop(client_name):
 
 def start_simulation():
     client_name = "foo-client"
-    threading.Thread(target=process_messages, daemon=True).start()
+    threading.Thread(target=partial(process_messages, logs), daemon=True).start()
     submission_thread = threading.Thread(
         target=event_submission_thread,
         daemon=True,
