@@ -8,24 +8,22 @@ layout = Layout()
 
 N_MESSAGES = 50
 
-layout.split_row(
-    Layout(name="main_thread"),
-    Layout(name="submission_thread")
-)
+layout.split_row(Layout(name="main_thread"), Layout(name="submission_thread"))
 layout["main_thread"].update(Panel("", title="Main Thread Log"))
 layout["submission_thread"].update(Panel("", title="Submission Thread Log"))
 
 queue = Queue()
 
+
 def process_messages(client_name: str):
     logs = {"MainThread": [], client_name: []}
     while True:
         thread_name, message = queue.get()
-        
+
         if len(logs[thread_name]) >= N_MESSAGES:
             logs[thread_name].pop(0)
         logs[thread_name].append(message)
-        
+
         layout["main_thread"].update(
             Panel("\n".join(logs["MainThread"]), title="Main Thread Log")
         )
@@ -35,7 +33,7 @@ def process_messages(client_name: str):
 
         console.clear()
         console.print(layout, end="/r")
-        
+
         queue.task_done()
 
 
