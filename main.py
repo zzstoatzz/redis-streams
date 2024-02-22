@@ -13,8 +13,10 @@ r = redis.Redis(host="localhost", port=6379, db=0)
 
 
 SAMPLE_CLIENT_NAME = "foo-client"
+MIN_IDLE_TIME = 10_000  # 10 seconds
 AUTOCLAIM_COUNT = 100
-MIN_IDLE_TIME = 10_000
+READ_COUNT = 5
+READ_BLOCK = 1000  # 1 second
 
 logs = {"MainThread": [], SAMPLE_CLIENT_NAME: []}
 
@@ -24,21 +26,11 @@ def pprint(msg: str):
         message=msg
     )
 
-def ensure_consumer_group_exists(stream_name, groupname):
-    try:
-        # implcitly uses id="$"
-        r.xgroup_create(name=stream_name, groupname=groupname, mkstream=True)
-        
-    except redis.exceptions.ResponseError as e:
-        if "BUSYGROUP Consumer Group name already exists" not in str(e):
-            raise
-
-
+# EVENT SUBMISSION
 def submit_event(task_key, event_data):
     stream_name = f"stream:{task_key}"
     event_id = r.xadd(stream_name, {"data": json.dumps(event_data)}).decode("utf-8")
     pprint(f"submitting entry ... {stream_name}:{event_id}")
-
 
 
 def event_submission_thread():
@@ -61,17 +53,63 @@ def event_submission_thread():
             }
             submit_event(task_key, event_data)
 
+# CONSUMER GROUP
+def ensure_consumer_group(stream_name: str, groupname: str):
+    try:
+        # implcitly uses id="$"
+        r.xgroup_create(name=stream_name, groupname=groupname, mkstream=True)
+        
+    except redis.exceptions.ResponseError as e:
+        if "BUSYGROUP Consumer Group name already exists" not in str(e):
+            raise
 
+def process_claimed_messages(stream_name: str, claimed_messages: list):
+    for _, msg_data in claimed_messages:
+        data_str = msg_data[b"data"].decode("utf-8")
+        data_obj = json.loads(data_str)
+        pprint(f"Claimed and processed: {stream_name}: {data_obj.get('detail')}")
+    
+    return [msg_id for msg_id, _ in claimed_messages]
+
+def process_new_messages(stream_name: str, consumer_name: str):
+    new_msg_ids = []
+    messages = r.xreadgroup(
+        groupname="my_consumer_group",
+        consumername=consumer_name,
+        streams={stream_name: ">"},
+        count=READ_COUNT,
+        block=READ_BLOCK,
+    )
+
+    for _, msgs in messages:
+        for msg_id, msg_data in msgs:
+            i = msg_id.decode("utf-8")
+            data_str = msg_data[b"data"].decode("utf-8")
+            data_obj = json.loads(data_str)
+
+            if random.random() < 0.8:  # Ack 80% of the time
+                pprint(f"Processing + ack for {stream_name}:{i}: {data_obj.get('detail')}")
+                new_msg_ids.append(i)
+            else:
+                pprint(f"Ope! Not acking {stream_name}:{i}: {data_obj.get('detail')}")
+
+    return new_msg_ids
+
+def acknowledge_messages(stream_name: str, group_name: str, message_ids: list):
+    if message_ids:
+        r.xack(stream_name, group_name, *message_ids)
+
+# MAIN LOOP
 def main_loop(client_name):
     known_streams = [stream.decode() for stream in r.keys("stream:*")]
+
     while True:
         for stream_name in known_streams:
-            ensure_consumer_group_exists(
-                stream_name=stream_name, groupname="my_consumer_group"
-            )
-            start_id = '0-0'  # start from the beginning
+            ensure_consumer_group(stream_name, "my_consumer_group")
+
+            start_id = '0-0'  # Start from the beginning
             while True:
-                result = r.xautoclaim( # https://redis.io/commands/xautoclaim/
+                result = r.xautoclaim(
                     name=stream_name,
                     groupname="my_consumer_group",
                     consumername=client_name,
@@ -83,59 +121,26 @@ def main_loop(client_name):
 
                 if not claimed_messages:
                     break
-                
-                for _, msg_data in claimed_messages:
-                    data_str = msg_data[b"data"].decode("utf-8")
-                    data_obj = json.loads(data_str)
-                    pprint(f"Claimed and processed: {stream_name}: {data_obj.get('detail')}") # noqa
 
-                if message_ids := [msg_id for msg_id, _ in claimed_messages]:
-                    r.xack(stream_name, "my_consumer_group", *message_ids)
-
-                # Prepare for the next iteration if needed
+                message_ids = process_claimed_messages(stream_name, claimed_messages)
+                acknowledge_messages(stream_name, "my_consumer_group", message_ids)
                 start_id = next_start_id
 
-            messages = r.xreadgroup(
-                groupname="my_consumer_group",
-                consumername=client_name,
-                streams={stream_name: ">"},  # `>` ~= msgs not seen by consumer group
-                count=5, # TODO: how to choose this number?
-                block=1000, # TODO: how to choose this number?
-            )
-            
-            # Process new messages and randomly acknowledge most of them
-            new_msg_ids = []
-            for _, msgs in messages:
-                for msg_id, msg_data in msgs:
-                    i = msg_id.decode("utf-8")
-                    data_str = msg_data[b"data"].decode("utf-8")
-                    data_obj = json.loads(data_str)
+            new_msg_ids = process_new_messages(stream_name, client_name)
+            acknowledge_messages(stream_name, "my_consumer_group", new_msg_ids)
 
-                    
-                    if random.random() < 0.8: # ack 80% of the time
-                        pprint(f"Processing + ack for {stream_name}:{i}: {data_obj.get('detail')}") # noqa
-                        new_msg_ids.append(i)
-                    else:
-                        pprint(f"Ope! Not acking {stream_name}:{i}: {data_obj.get('detail')}") # noqa
-            
-            if new_msg_ids:
-                r.xack(stream_name, "my_consumer_group", *new_msg_ids)
-
-        time.sleep(0.1)
-
+            time.sleep(0.1)
 
 
 def start_simulation():
-    client_name = "foo-client"
     threading.Thread(target=partial(process_messages, logs), daemon=True).start()
-    submission_thread = threading.Thread(
+    threading.Thread(
         target=event_submission_thread,
         daemon=True,
-        name=client_name
-    )
-    submission_thread.start()
+        name=SAMPLE_CLIENT_NAME
+    ).start()
 
-    main_loop(client_name)
+    main_loop(SAMPLE_CLIENT_NAME)
 
 
 if __name__ == "__main__":
