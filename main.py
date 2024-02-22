@@ -68,8 +68,9 @@ def main_loop(client_name):
                 )
                 next_start_id = result[0]
                 claimed_messages = result[1]
+
                 if not claimed_messages:
-                    break  # Break the loop if no more messages to claim
+                    break  # if no more messages to claim
                 
                 # Process and acknowledge claimed messages
                 for _, msg_data in claimed_messages:
@@ -90,8 +91,8 @@ def main_loop(client_name):
                 groupname="my_consumer_group",
                 consumername=client_name,
                 streams={stream_name: ">"},
-                count=5,
-                block=1000,
+                count=5, # TODO: how to choose this number?
+                block=1000, # TODO: how to choose this number?
             )
             
             # Process new messages and randomly acknowledge most of them
