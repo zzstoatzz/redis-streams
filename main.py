@@ -18,8 +18,6 @@ AUTOCLAIM_COUNT = 100
 READ_COUNT = 5
 READ_BLOCK = 1000  # 1 second
 
-logs = {"MainThread": [], SAMPLE_CLIENT_NAME: []}
-
 def pprint(msg: str):
     update_visuals(
         thread_name=threading.current_thread().name,
@@ -134,7 +132,7 @@ def main_loop(client_name):
 
 def start_simulation(client_name: str):
     threading.Thread(
-        target=partial(process_messages, logs, client_name),
+        target=partial(process_messages, client_name),
         daemon=True
     ).start()
     threading.Thread(
