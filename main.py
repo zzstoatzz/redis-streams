@@ -15,7 +15,7 @@ r = redis.Redis(host="localhost", port=6379, db=0)
 SAMPLE_CLIENT_NAME = "foo-client"
 MIN_IDLE_TIME = 1_000  # 1 second
 AUTOCLAIM_COUNT = 100
-READ_COUNT = 10
+READ_COUNT = MAX_BURST_SIZE = 10
 READ_BLOCK = 1_000  # 1 second
 ACK_FAILURE_RATE = 0.05
 
@@ -38,7 +38,7 @@ def event_submission_thread():
         time.sleep(random.randint(1, 5))
 
         # Submit a burst of events
-        for _ in range(random.randint(1, READ_COUNT)):
+        for _ in range(random.randint(1, MAX_BURST_SIZE)):
             task_key = random.choice(task_keys)
             event_data = {
                 "timestamp": str(datetime.now()),
